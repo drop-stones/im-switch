@@ -1,4 +1,5 @@
 mod fcitx5;
+mod ibus;
 
 use crate::ImSwitchError;
 
