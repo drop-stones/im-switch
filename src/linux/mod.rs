@@ -1,3 +1,5 @@
+mod fcitx5;
+
 use crate::ImSwitchError;
 
 pub fn get_input_method() -> Result<String, ImSwitchError> {
