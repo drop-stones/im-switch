@@ -25,8 +25,8 @@ pub fn set_input_method(im: &str) -> Result<(), ImSwitchError> {
 
 pub fn list_input_methods() -> Result<Vec<String>, ImSwitchError> {
     let controller = connect()?;
-    let methods = controller
-        .available_input_methods()
-        .map_err(|e| ImSwitchError::Platform(format!("fcitx5: failed to list input methods: {e}")))?;
+    let methods = controller.available_input_methods().map_err(|e| {
+        ImSwitchError::Platform(format!("fcitx5: failed to list input methods: {e}"))
+    })?;
     Ok(methods.into_iter().map(|(name, ..)| name).collect())
 }

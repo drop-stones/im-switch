@@ -16,7 +16,11 @@ pub enum ImeAction {
 pub fn handle_ime(action: ImeAction) -> Result<(), ImSwitchError> {
     match action {
         ImeAction::Get => {
-            let state = if get_ime_state()? { "enabled" } else { "disabled" };
+            let state = if get_ime_state()? {
+                "enabled"
+            } else {
+                "disabled"
+            };
             println!("{state}");
             Ok(())
         }

@@ -58,8 +58,15 @@ pub fn set_input_method(klid: &str) -> Result<(), ImSwitchError> {
         return Err(ImSwitchError::InputMethodNotFound(klid.to_string()));
     }
     let hwnd = get_foreground_window()?;
-    unsafe { PostMessageA(Some(hwnd), WM_INPUTLANGCHANGEREQUEST, WPARAM(0), LPARAM(hkl.0 as isize)) }
-        .map_err(|e| ImSwitchError::Platform(format!("PostMessageA failed: {e}")))?;
+    unsafe {
+        PostMessageA(
+            Some(hwnd),
+            WM_INPUTLANGCHANGEREQUEST,
+            WPARAM(0),
+            LPARAM(hkl.0 as isize),
+        )
+    }
+    .map_err(|e| ImSwitchError::Platform(format!("PostMessageA failed: {e}")))?;
     Ok(())
 }
 

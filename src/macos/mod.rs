@@ -48,8 +48,7 @@ pub fn get_input_method() -> Result<String, ImSwitchError> {
                 "macOS: TISCopyCurrentKeyboardInputSource returned null".to_string(),
             ));
         }
-        let source_id =
-            TISGetInputSourceProperty(source, kTISPropertyInputSourceID) as CFStringRef;
+        let source_id = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) as CFStringRef;
         if source_id.is_null() {
             return Err(ImSwitchError::Platform(
                 "macOS: failed to get input source ID".to_string(),
@@ -70,10 +69,9 @@ pub fn list_input_methods() -> Result<Vec<String>, ImSwitchError> {
             let source = sources.get(i).ok_or_else(|| {
                 ImSwitchError::Platform("macOS: failed to get input source from list".to_string())
             })?;
-            let source_id = TISGetInputSourceProperty(
-                source.as_concrete_TypeRef(),
-                kTISPropertyInputSourceID,
-            ) as CFStringRef;
+            let source_id =
+                TISGetInputSourceProperty(source.as_concrete_TypeRef(), kTISPropertyInputSourceID)
+                    as CFStringRef;
             if !source_id.is_null() {
                 result.push(CFString::wrap_under_get_rule(source_id).to_string());
             }
