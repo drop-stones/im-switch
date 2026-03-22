@@ -5,4 +5,8 @@ pub enum ImSwitchError {
     Io(#[from] std::io::Error),
     #[error("unsupported platform")]
     UnsupportedPlatform,
+    #[error("input method not found: {0}")]
+    InputMethodNotFound(String),
+    #[error("{0}")]
+    Platform(String),
 }

@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use im_switch::{get_im, set_im};
+use im_switch::{get_input_method, set_input_method};
 
 #[derive(Parser)]
 #[command(author, version, about = "Cross-platform input method switcher")]
@@ -23,8 +23,8 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Command::Get => get_im().map(|im| println!("{im}")),
-        Command::Set { ref im } => set_im(im),
+        Command::Get => get_input_method().map(|im| println!("{im}")),
+        Command::Set { ref im } => set_input_method(im),
     };
 
     if let Err(e) = result {
