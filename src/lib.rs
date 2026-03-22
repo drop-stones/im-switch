@@ -1,6 +1,36 @@
+// --- Module declarations ---
+
 mod error;
 
+#[cfg(target_os = "linux")]
+mod linux;
+
+#[cfg(target_os = "windows")]
+mod windows;
+
+#[cfg(target_os = "macos")]
+mod macos;
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+mod unsupported;
+
+// --- Re-exports and platform alias ---
+
 pub use error::ImSwitchError;
+
+#[cfg(target_os = "linux")]
+use linux as platform;
+
+#[cfg(target_os = "windows")]
+use windows as platform;
+
+#[cfg(target_os = "macos")]
+use macos as platform;
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+use unsupported as platform;
+
+// --- Cross-platform API ---
 
 /// Returns the current input method identifier.
 ///
@@ -17,16 +47,4 @@ pub fn get_input_method() -> Result<String, ImSwitchError> {
 /// The identifier format is platform-dependent (see [`get_input_method`]).
 pub fn set_input_method(im: &str) -> Result<(), ImSwitchError> {
     platform::set_input_method(im)
-}
-
-mod platform {
-    use super::ImSwitchError;
-
-    pub fn get_input_method() -> Result<String, ImSwitchError> {
-        Err(ImSwitchError::UnsupportedPlatform)
-    }
-
-    pub fn set_input_method(_im: &str) -> Result<(), ImSwitchError> {
-        Err(ImSwitchError::UnsupportedPlatform)
-    }
 }
