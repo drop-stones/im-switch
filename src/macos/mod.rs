@@ -1,60 +1,88 @@
 use crate::ImSwitchError;
-use objc2::rc::Retained;
-use objc2_app_kit::{NSTextInputContext, NSTextInputSourceIdentifier};
-use objc2_foundation::{MainThreadMarker, NSString};
-use std::{ffi::CStr, ops::Deref};
+use core_foundation::{
+    array::CFArray,
+    base::{CFTypeID, FromVoid, OSStatus, TCFType, ToVoid},
+    declare_TCFType,
+    dictionary::CFDictionary,
+    impl_TCFType,
+    string::{CFString, CFStringRef},
+};
+use std::ffi::c_void;
 
-fn nsstring_to_string(nsstr: &NSString) -> Result<String, ImSwitchError> {
-    let cstr = unsafe { CStr::from_ptr(nsstr.UTF8String()) };
-    cstr.to_str()
-        .map(|s| s.to_owned())
-        .map_err(|e| ImSwitchError::Platform(format!("macOS: UTF-8 conversion error: {e}")))
+// --- Carbon TIS FFI bindings ---
+
+type CFDataRef = *const c_void;
+type CFDictionaryRef = *const c_void;
+type CFArrayRef = *const core_foundation::array::__CFArray;
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct __TISInputSource(c_void);
+type TISInputSourceRef = *const __TISInputSource;
+
+declare_TCFType!(TISInputSource, TISInputSourceRef);
+impl_TCFType!(TISInputSource, TISInputSourceRef, TISInputSourceGetTypeID);
+
+#[link(name = "Carbon", kind = "framework")]
+unsafe extern "C" {
+    fn TISInputSourceGetTypeID() -> CFTypeID;
+    fn TISCopyCurrentKeyboardInputSource() -> TISInputSourceRef;
+    fn TISGetInputSourceProperty(source: TISInputSourceRef, property_key: CFStringRef)
+        -> CFDataRef;
+    fn TISCreateInputSourceList(
+        properties: CFDictionaryRef,
+        include_all_installed: bool,
+    ) -> CFArrayRef;
+    fn TISSelectInputSource(source: TISInputSourceRef) -> OSStatus;
+
+    static kTISPropertyInputSourceID: CFStringRef;
 }
 
-fn create_input_context() -> Result<Retained<NSTextInputContext>, ImSwitchError> {
-    let marker = MainThreadMarker::new().ok_or_else(|| {
-        ImSwitchError::Platform("macOS: must be called from the main thread".to_string())
-    })?;
-    Ok(unsafe { NSTextInputContext::new(marker) })
-}
-
-fn get_keyboard_input_sources(ctx: &NSTextInputContext) -> Option<Vec<Retained<NSString>>> {
-    ctx.keyboardInputSources().map(|v| v.to_vec())
-}
-
-fn is_input_method_available(im: &str) -> Result<bool, ImSwitchError> {
-    let ctx = create_input_context()?;
-    let sources = get_keyboard_input_sources(&ctx).ok_or_else(|| {
-        ImSwitchError::Platform("macOS: failed to get keyboard input sources".to_string())
-    })?;
-    for source in &sources {
-        if nsstring_to_string(source)? == im {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
+// --- Public API ---
 
 pub fn get_input_method() -> Result<String, ImSwitchError> {
-    let ctx = create_input_context()?;
-    let source = ctx.selectedKeyboardInputSource().ok_or_else(|| {
-        ImSwitchError::Platform("macOS: failed to get selected input source".to_string())
-    })?;
-    nsstring_to_string(source.deref())
+    unsafe {
+        let source = TISCopyCurrentKeyboardInputSource();
+        if source.is_null() {
+            return Err(ImSwitchError::Platform(
+                "macOS: TISCopyCurrentKeyboardInputSource returned null".to_string(),
+            ));
+        }
+        let source_id =
+            TISGetInputSourceProperty(source, kTISPropertyInputSourceID) as CFStringRef;
+        if source_id.is_null() {
+            return Err(ImSwitchError::Platform(
+                "macOS: failed to get input source ID".to_string(),
+            ));
+        }
+        Ok(CFString::wrap_under_get_rule(source_id).to_string())
+    }
 }
 
 pub fn set_input_method(im: &str) -> Result<(), ImSwitchError> {
-    if !is_input_method_available(im)? {
-        return Err(ImSwitchError::InputMethodNotFound(im.to_string()));
-    }
-
     // Skip if already set
     if get_input_method()? == im {
         return Ok(());
     }
 
-    let ctx = create_input_context()?;
-    let id: Retained<NSTextInputSourceIdentifier> = NSString::from_str(im);
-    ctx.setSelectedKeyboardInputSource(Some(id.deref()));
+    unsafe {
+        let filter = CFDictionary::from_CFType_pairs(&[(
+            CFString::from_void(kTISPropertyInputSourceID.cast()).clone(),
+            CFString::new(im),
+        )]);
+        let sources = CFArray::<TISInputSource>::wrap_under_get_rule(TISCreateInputSourceList(
+            filter.to_untyped().to_void().cast(),
+            false,
+        ));
+        let source = sources
+            .get(0)
+            .ok_or_else(|| ImSwitchError::InputMethodNotFound(im.to_string()))?;
+        let status = TISSelectInputSource(source.as_concrete_TypeRef());
+        if status != 0 {
+            return Err(ImSwitchError::Platform(format!(
+                "macOS: TISSelectInputSource failed with status {status}"
+            )));
+        }
+    }
     Ok(())
 }
