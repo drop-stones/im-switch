@@ -1,9 +1,13 @@
 use crate::ImSwitchError;
-use windows::Win32::{
-    Foundation::*,
-    UI::{
-        Input::{Ime::*, KeyboardAndMouse::*},
-        WindowsAndMessaging::*,
+use std::ffi::CString;
+use windows::{
+    core::PCSTR,
+    Win32::{
+        Foundation::*,
+        UI::{
+            Input::{Ime::*, KeyboardAndMouse::*},
+            WindowsAndMessaging::*,
+        },
     },
 };
 
@@ -33,18 +37,29 @@ fn get_ime_window() -> Result<HWND, ImSwitchError> {
 
 // --- Keyboard layout (KLID) based API ---
 
+// KL_NAMELENGTH: 8 hex chars + null terminator
+const KLID_BUFFER_LEN: usize = 9;
+
 pub fn get_input_method() -> Result<String, ImSwitchError> {
-    let layout = unsafe { GetKeyboardLayout(0) };
-    // KLID is derived from the low word of the layout handle
-    let klid = (layout.0 as u32) & 0xFFFF;
-    Ok(format!("{:08X}", klid))
+    let mut buffer = [0u8; KLID_BUFFER_LEN];
+    unsafe { GetKeyboardLayoutNameA(&mut buffer) }
+        .map_err(|e| ImSwitchError::Platform(format!("GetKeyboardLayoutNameA failed: {e}")))?;
+    let len = buffer.iter().position(|&b| b == 0).unwrap_or(buffer.len());
+    Ok(String::from_utf8_lossy(&buffer[..len]).to_string())
 }
 
 pub fn set_input_method(klid: &str) -> Result<(), ImSwitchError> {
-    let layout = unsafe { LoadKeyboardLayoutA(&PCSTR::from_raw(klid.as_ptr()), KLF_ACTIVATE) };
-    if layout.is_invalid() {
+    let cstr = CString::new(klid)
+        .map_err(|e| ImSwitchError::Platform(format!("invalid KLID string: {e}")))?;
+    let pcstr = PCSTR::from_raw(cstr.as_ptr() as *const u8);
+    let hkl = unsafe { LoadKeyboardLayoutA(pcstr, KLF_ACTIVATE) }
+        .map_err(|_| ImSwitchError::InputMethodNotFound(klid.to_string()))?;
+    if hkl.is_invalid() {
         return Err(ImSwitchError::InputMethodNotFound(klid.to_string()));
     }
+    let hwnd = get_foreground_window()?;
+    unsafe { PostMessageA(Some(hwnd), WM_INPUTLANGCHANGEREQUEST, WPARAM(0), LPARAM(hkl.0 as isize)) }
+        .map_err(|e| ImSwitchError::Platform(format!("PostMessageA failed: {e}")))?;
     Ok(())
 }
 
