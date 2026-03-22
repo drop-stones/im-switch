@@ -1,3 +1,35 @@
+//! A cross-platform input method switcher.
+//!
+//! **im-switch** provides a unified API to query, switch, and list input methods
+//! across Linux, Windows, and macOS.
+//!
+//! # Platform support
+//!
+//! | Platform | Backend |
+//! |----------|---------|
+//! | Linux | fcitx5 (D-Bus), ibus (CLI) — auto-detected at runtime |
+//! | Windows | Win32 API (keyboard layout + IME on/off control) |
+//! | macOS | Carbon TIS API |
+//!
+//! # Quick start
+//!
+//! ```rust,no_run
+//! use im_switch::{get_input_method, set_input_method, list_input_methods};
+//!
+//! // Get the current input method
+//! let im = get_input_method().unwrap();
+//! println!("Current IM: {im}");
+//!
+//! // List available input methods
+//! let methods = list_input_methods().unwrap();
+//! for m in &methods {
+//!     println!("  {m}");
+//! }
+//!
+//! // Restore a saved input method
+//! set_input_method(&im).unwrap();
+//! ```
+
 // --- Module declarations ---
 
 mod error;

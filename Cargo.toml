@@ -5,6 +5,9 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/drop-stones/im-switch"
 description = "A cross-platform input method switcher — Rust crate + CLI"
+readme = "README.md"
+keywords = ["input-method", "ime", "fcitx5", "ibus", "cross-platform"]
+categories = ["os"]
 rust-version = "1.91.0"
 
 [dependencies]
