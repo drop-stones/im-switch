@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use im_switch::{get_input_method, set_input_method};
+use im_switch::{get_input_method, list_input_methods, set_input_method};
 
 #[derive(Parser)]
 #[command(author, version, about = "Cross-platform input method switcher")]
@@ -17,6 +17,8 @@ enum Command {
         /// Input method identifier to set
         im: String,
     },
+    /// List available input methods
+    List,
 }
 
 fn main() {
@@ -25,6 +27,11 @@ fn main() {
     let result = match cli.command {
         Command::Get => get_input_method().map(|im| println!("{im}")),
         Command::Set { ref im } => set_input_method(im),
+        Command::List => list_input_methods().map(|methods| {
+            for method in &methods {
+                println!("{method}");
+            }
+        }),
     };
 
     if let Err(e) = result {

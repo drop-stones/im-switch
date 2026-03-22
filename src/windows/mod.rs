@@ -63,6 +63,34 @@ pub fn set_input_method(klid: &str) -> Result<(), ImSwitchError> {
     Ok(())
 }
 
+pub fn list_input_methods() -> Result<Vec<String>, ImSwitchError> {
+    let count = unsafe { GetKeyboardLayoutList(None) };
+    if count == 0 {
+        return Ok(vec![]);
+    }
+
+    let mut hkls = vec![HKL::default(); count as usize];
+    unsafe { GetKeyboardLayoutList(Some(&mut hkls)) };
+
+    let klids = hkls
+        .iter()
+        .map(|hkl| {
+            let val = hkl.0 as u32;
+            let lo = val & 0xFFFF;
+            let hi = (val >> 16) & 0xFFFF;
+            if hi == lo {
+                // Standard layout: KLID is the language ID
+                format!("{lo:08X}")
+            } else {
+                // IME or special layout: use the full HKL value
+                format!("{val:08X}")
+            }
+        })
+        .collect();
+
+    Ok(klids)
+}
+
 // --- IME on/off API ---
 
 pub fn get_ime_state() -> Result<bool, ImSwitchError> {

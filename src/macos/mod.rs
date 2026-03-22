@@ -59,6 +59,29 @@ pub fn get_input_method() -> Result<String, ImSwitchError> {
     }
 }
 
+pub fn list_input_methods() -> Result<Vec<String>, ImSwitchError> {
+    unsafe {
+        let sources = CFArray::<TISInputSource>::wrap_under_get_rule(TISCreateInputSourceList(
+            std::ptr::null(),
+            false,
+        ));
+        let mut result = Vec::with_capacity(sources.len() as usize);
+        for i in 0..sources.len() {
+            let source = sources.get(i).ok_or_else(|| {
+                ImSwitchError::Platform("macOS: failed to get input source from list".to_string())
+            })?;
+            let source_id = TISGetInputSourceProperty(
+                source.as_concrete_TypeRef(),
+                kTISPropertyInputSourceID,
+            ) as CFStringRef;
+            if !source_id.is_null() {
+                result.push(CFString::wrap_under_get_rule(source_id).to_string());
+            }
+        }
+        Ok(result)
+    }
+}
+
 pub fn set_input_method(im: &str) -> Result<(), ImSwitchError> {
     // Skip if already set
     if get_input_method()? == im {

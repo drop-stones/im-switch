@@ -59,3 +59,10 @@ pub fn set_input_method(im: &str) -> Result<(), ImSwitchError> {
         ImFramework::Ibus => ibus::set_input_method(im),
     }
 }
+
+pub fn list_input_methods() -> Result<Vec<String>, ImSwitchError> {
+    match get_framework()? {
+        ImFramework::Fcitx5 => fcitx5::list_input_methods(),
+        ImFramework::Ibus => ibus::list_input_methods(),
+    }
+}

@@ -49,6 +49,11 @@ pub fn set_input_method(im: &str) -> Result<(), ImSwitchError> {
     platform::set_input_method(im)
 }
 
+/// Returns a list of available input method identifiers.
+pub fn list_input_methods() -> Result<Vec<String>, ImSwitchError> {
+    platform::list_input_methods()
+}
+
 // --- Windows-only API ---
 
 /// Returns the current IME on/off state (Windows only).
