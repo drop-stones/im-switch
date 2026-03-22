@@ -1,3 +1,5 @@
+mod cli;
+
 use clap::{Parser, Subcommand};
 use im_switch::{get_input_method, list_input_methods, set_input_method};
 
@@ -19,6 +21,12 @@ enum Command {
     },
     /// List available input methods
     List,
+    /// Control IME on/off state (Windows only)
+    #[cfg(target_os = "windows")]
+    Ime {
+        #[command(subcommand)]
+        action: cli::windows::ImeAction,
+    },
 }
 
 fn main() {
@@ -32,6 +40,8 @@ fn main() {
                 println!("{method}");
             }
         }),
+        #[cfg(target_os = "windows")]
+        Command::Ime { action } => cli::windows::handle_ime(action),
     };
 
     if let Err(e) = result {

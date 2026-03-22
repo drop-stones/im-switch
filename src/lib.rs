@@ -67,3 +67,12 @@ pub fn get_ime_state() -> Result<bool, ImSwitchError> {
 pub fn set_ime_state(enabled: bool) -> Result<(), ImSwitchError> {
     platform::set_ime_state(enabled)
 }
+
+/// Toggles the IME on/off state and returns the new state (Windows only).
+#[cfg(target_os = "windows")]
+pub fn toggle_ime_state() -> Result<bool, ImSwitchError> {
+    let current = get_ime_state()?;
+    let new_state = !current;
+    set_ime_state(new_state)?;
+    Ok(new_state)
+}
