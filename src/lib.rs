@@ -48,3 +48,17 @@ pub fn get_input_method() -> Result<String, ImSwitchError> {
 pub fn set_input_method(im: &str) -> Result<(), ImSwitchError> {
     platform::set_input_method(im)
 }
+
+// --- Windows-only API ---
+
+/// Returns the current IME on/off state (Windows only).
+#[cfg(target_os = "windows")]
+pub fn get_ime_state() -> Result<bool, ImSwitchError> {
+    platform::get_ime_state()
+}
+
+/// Sets the IME on/off state (Windows only).
+#[cfg(target_os = "windows")]
+pub fn set_ime_state(enabled: bool) -> Result<(), ImSwitchError> {
+    platform::set_ime_state(enabled)
+}

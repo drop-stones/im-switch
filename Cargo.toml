@@ -13,3 +13,12 @@ thiserror = "2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 fcitx5-dbus = "0.1"
+
+[target.'cfg(target_os = "windows")'.dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_Ime",
+    "Win32_UI_Input_KeyboardAndMouse",
+]
