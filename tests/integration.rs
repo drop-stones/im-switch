@@ -1,18 +1,22 @@
 use im_switch::{get_input_method, list_input_methods, set_input_method};
+use serial_test::serial;
 
 #[test]
+#[serial]
 fn get_input_method_returns_non_empty_string() {
     let im = get_input_method().unwrap();
     assert!(!im.is_empty(), "input method should not be empty");
 }
 
 #[test]
+#[serial]
 fn list_input_methods_returns_non_empty_list() {
     let methods = list_input_methods().unwrap();
     assert!(!methods.is_empty(), "should have at least one input method");
 }
 
 #[test]
+#[serial]
 fn current_input_method_is_in_list() {
     let current = get_input_method().unwrap();
     let methods = list_input_methods().unwrap();
@@ -23,6 +27,7 @@ fn current_input_method_is_in_list() {
 }
 
 #[test]
+#[serial]
 fn set_then_get_roundtrip() {
     let original = get_input_method().unwrap();
 
@@ -34,6 +39,7 @@ fn set_then_get_roundtrip() {
 }
 
 #[test]
+#[serial]
 fn list_contains_no_empty_entries() {
     let methods = list_input_methods().unwrap();
     for method in &methods {
