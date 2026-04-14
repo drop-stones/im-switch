@@ -41,9 +41,9 @@ cargo install im-switch
 
 | Command | Description |
 |---------|-------------|
-| `im-switch ime get` | Print IME state (`enabled` / `disabled`) |
-| `im-switch ime enable` | Enable the IME |
-| `im-switch ime disable` | Disable the IME |
+| `im-switch ime get` | Print IME state (`on` / `off`) |
+| `im-switch ime on` | Turn on the IME |
+| `im-switch ime off` | Turn off the IME |
 | `im-switch ime toggle` | Toggle the IME state |
 
 ## Library
