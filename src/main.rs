@@ -21,6 +21,15 @@ enum Command {
     },
     /// List available input methods
     List,
+    /// Run as a loopback daemon, serving commands over TCP
+    Serve {
+        /// Port to listen on
+        #[arg(long, default_value_t = cli::ipc::DEFAULT_PORT)]
+        port: u16,
+        /// Address to bind
+        #[arg(long, default_value = "127.0.0.1")]
+        addr: String,
+    },
     /// Control IME on/off state (Windows only)
     #[cfg(target_os = "windows")]
     Ime {
@@ -40,6 +49,7 @@ fn main() {
                 println!("{method}");
             }
         }),
+        Command::Serve { port, addr } => cli::ipc::run_server(&format!("{addr}:{port}")),
         #[cfg(target_os = "windows")]
         Command::Ime { action } => cli::windows::handle_ime(action),
     };
