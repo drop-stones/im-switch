@@ -123,9 +123,11 @@ reaches the Windows daemon, so the client just fails and the plugin falls back.
 Line protocol:
 
 - Request = one line, the CLI args joined by spaces:
-  `ime get|on|off|toggle`, `get`, `set <id>`, `list`, `shutdown`.
+  `ping`, `ime get|on|off|toggle`, `get`, `set <id>`, `list`, `shutdown`.
 - Response = line 1 is `ok` or `err: <message>`; for `ok`, the bytes after the
   first newline are the **verbatim CLI stdout** (so daemon output == CLI output).
+- `ping` replies `ok` with no payload and does not touch the IME — consumers use
+  it to probe reachability (mirrored-mode fast-path detection, see §5.2).
 - `shutdown` replies `ok` and then stops the accept loop.
 
 ### 5.2 Client mode — triggered by the `--remote` flag

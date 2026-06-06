@@ -85,6 +85,9 @@ fn handle_conn(stream: TcpStream) -> std::io::Result<bool> {
 fn dispatch_line(line: &str) -> Result<String, ImSwitchError> {
     let tokens: Vec<&str> = line.split_whitespace().collect();
     match tokens.as_slice() {
+        // Health/reachability check that does not touch the IME; used by
+        // consumers to probe whether the daemon is reachable (see design §5.2).
+        ["ping"] => Ok(String::new()),
         ["get"] => Ok(format!("{}\n", get_input_method()?)),
         ["set", im] => {
             set_input_method(im)?;
@@ -180,6 +183,11 @@ mod tests {
     #[test]
     fn dispatch_unknown_is_error() {
         assert!(dispatch_line("nope").is_err());
+    }
+
+    #[test]
+    fn ping_is_ok_with_empty_payload() {
+        assert_eq!(dispatch_line("ping").unwrap(), "");
     }
 
     #[test]
