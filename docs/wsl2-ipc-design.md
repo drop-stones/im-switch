@@ -115,13 +115,18 @@ reaches the Windows daemon, so the client just fails and the plugin falls back.
   exits.
 - **No idle self-exit** (decided): a loopback accept loop is near-zero cost, and
   on-demand restart by the client handles the rest.
+- **Graceful `shutdown`** for manual/dev convenience. It is *not* the upgrade
+  mechanism: a stale (old) daemon may not understand a newer command or may be
+  wedged, so consumers still use `taskkill` + relaunch (§7/§11) when they must
+  guarantee the daemon is gone regardless of its state.
 
 Line protocol:
 
 - Request = one line, the CLI args joined by spaces:
-  `ime get|on|off|toggle`, `get`, `set <id>`, `list`.
+  `ime get|on|off|toggle`, `get`, `set <id>`, `list`, `shutdown`.
 - Response = line 1 is `ok` or `err: <message>`; for `ok`, the bytes after the
   first newline are the **verbatim CLI stdout** (so daemon output == CLI output).
+- `shutdown` replies `ok` and then stops the accept loop.
 
 ### 5.2 Client mode — triggered by `IM_SWITCH_REMOTE`
 

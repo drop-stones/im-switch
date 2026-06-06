@@ -16,32 +16,44 @@ pub const DEFAULT_PORT: u16 = 7691;
 /// Maximum time to wait for a client to send its request line.
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Run the daemon, listening on `bind` (e.g. `"127.0.0.1:7691"`) until killed.
+/// Run the daemon, listening on `bind` (e.g. `"127.0.0.1:7691"`) until a
+/// `shutdown` request is received (or the process is killed).
 ///
 /// Binding a fixed port also enforces a single instance: a second `serve`
 /// fails to bind and exits.
 pub fn run_server(bind: &str) -> Result<(), ImSwitchError> {
     let listener = TcpListener::bind(bind)?;
     eprintln!("im-switch: serving on {bind}");
+    serve_loop(listener);
+    Ok(())
+}
+
+/// Accept connections until a handler signals shutdown.
+fn serve_loop(listener: TcpListener) {
     for stream in listener.incoming() {
         match stream {
-            Ok(s) => {
-                if let Err(e) = handle_conn(s) {
-                    eprintln!("im-switch: connection error: {e}");
+            Ok(s) => match handle_conn(s) {
+                Ok(true) => {
+                    eprintln!("im-switch: shutdown requested");
+                    break;
                 }
-            }
+                Ok(false) => {}
+                Err(e) => eprintln!("im-switch: connection error: {e}"),
+            },
             Err(e) => eprintln!("im-switch: accept error: {e}"),
         }
     }
-    Ok(())
 }
 
 /// Read one request line, execute it, and write the response back.
 ///
+/// Returns `Ok(true)` when the client requested `shutdown`, so the accept loop
+/// can stop.
+///
 /// Response format: line 1 is `ok` or `err: <message>`; for `ok`, the bytes
 /// after the first newline are the verbatim stdout the CLI would have printed,
 /// so the daemon's output matches the CLI byte-for-byte.
-fn handle_conn(stream: TcpStream) -> std::io::Result<()> {
+fn handle_conn(stream: TcpStream) -> std::io::Result<bool> {
     stream.set_read_timeout(Some(READ_TIMEOUT))?;
 
     let mut reader = BufReader::new(stream.try_clone()?);
@@ -49,18 +61,23 @@ fn handle_conn(stream: TcpStream) -> std::io::Result<()> {
     reader.read_line(&mut line)?;
     let line = line.trim();
     if line.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
 
-    let response = match dispatch_line(line) {
-        Ok(payload) => format!("ok\n{payload}"),
-        Err(e) => format!("err: {e}\n"),
+    let shutdown = line == "shutdown";
+    let response = if shutdown {
+        "ok\n".to_string()
+    } else {
+        match dispatch_line(line) {
+            Ok(payload) => format!("ok\n{payload}"),
+            Err(e) => format!("err: {e}\n"),
+        }
     };
 
     let mut writer = stream;
     writer.write_all(response.as_bytes())?;
     writer.flush()?;
-    Ok(())
+    Ok(shutdown)
 }
 
 /// Execute a single command line and return the stdout payload (possibly empty
@@ -163,6 +180,21 @@ mod tests {
     #[test]
     fn dispatch_unknown_is_error() {
         assert!(dispatch_line("nope").is_err());
+    }
+
+    #[test]
+    fn server_loop_exits_on_shutdown() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        let server = thread::spawn(move || serve_loop(listener));
+
+        // A normal command keeps the loop alive.
+        assert!(raw_request(&addr, "bogus").starts_with("err: "));
+        // `shutdown` replies `ok` and breaks the loop.
+        assert_eq!(raw_request(&addr, "shutdown"), "ok\n");
+
+        // The loop must have exited; otherwise this join hangs.
+        server.join().unwrap();
     }
 
     #[cfg(not(target_os = "windows"))]
