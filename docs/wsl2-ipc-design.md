@@ -128,21 +128,26 @@ Line protocol:
   first newline are the **verbatim CLI stdout** (so daemon output == CLI output).
 - `shutdown` replies `ok` and then stops the accept loop.
 
-### 5.2 Client mode — triggered by `IM_SWITCH_REMOTE`
+### 5.2 Client mode — triggered by the `--remote` flag
 
-- Intercepted in `main()` **before** clap parsing, so it forwards raw argv. This
-  sidesteps the fact that the `ime` subcommand is `cfg(windows)`-only — the Linux
-  client can still forward `ime off`.
-- `IM_SWITCH_REMOTE` value: `host:port`, bare `port` (→ `127.0.0.1:port`), or
-  `auto`/empty (→ `127.0.0.1:7691`).
+- Triggered by `--remote` (optionally `--remote=ADDR`), intercepted in `main()`
+  **before** clap parsing so it forwards the remaining raw argv. This sidesteps
+  the fact that the `ime` subcommand is `cfg(windows)`-only — the Linux client
+  can still forward `ime off`. Because the flag is explicit, only flagged
+  invocations forward; `serve`/`--help` need no special-casing.
+- `--remote=ADDR` value: `host:port`, bare `port` (→ `127.0.0.1:port`), bare
+  `host` (→ `host:7691`); bare `--remote` (no value) → `127.0.0.1:7691`.
+- **Connect timeout = 200 ms** (a short, fixed bound). Under mirrored mode a
+  *dead* loopback port does **not** refuse instantly — the SYN is dropped — so
+  without this bound a down daemon would hang for seconds. When the daemon is up,
+  connect is <3 ms, so 200 ms is a ~70x safety margin. The penalty only hits the
+  first switch after the daemon dies; the consumer's fallback then respawns it.
 - Exit codes (so the plugin can react precisely):
   - `0` — success (payload printed to stdout)
   - `1` — daemon reachable but the operation failed
-  - `2` — transport failure (daemon unreachable / refused)
+  - `2` — transport failure (daemon unreachable / timed out / malformed reply)
 - The client stays **thin**: on failure it just exits `2`. It does **not** start
   the daemon or fall back itself — that is the consumer's job (see §7).
-- `im-switch serve` is never forwarded (run locally even if the env is set);
-  args beginning with `-` (e.g. `--help`) are also run locally.
 
 ## 6. Binary layout (Plan B — server lives on the Windows filesystem)
 
@@ -176,7 +181,7 @@ plugin exit would break a second consumer running in parallel).
 
 Per IME switch, the consumer:
 
-1. Runs the Linux client (fast path) with `IM_SWITCH_REMOTE` set.
+1. Runs the Linux client (fast path) with the `--remote` flag.
 2. On exit code `2` (daemon down):
    - run the Windows `im-switch.exe <args>` directly so this switch is not lost
      (current behavior), and
@@ -201,8 +206,8 @@ rule, no auth token needed.
 
 ## 10. Staged implementation plan
 
-1. `im-switch`: `serve` subcommand (loopback daemon + line protocol).
-2. `im-switch`: client mode (`IM_SWITCH_REMOTE`) — forward / parse / exit codes.
+1. ✅ `im-switch`: `serve` subcommand (loopback daemon + line protocol + `shutdown`).
+2. ✅ `im-switch`: client mode (`--remote`) — forward / parse / exit codes.
 3. `im-switch.zellij`: install both binaries on WSL2 (client → WSL FS, server →
    Windows data dir); add `wsl2_ipc` config; wire the §7 orchestration.
 4. (later) `im-switch.nvim`: same orchestration.
