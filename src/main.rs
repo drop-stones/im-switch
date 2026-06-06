@@ -39,6 +39,13 @@ enum Command {
 }
 
 fn main() {
+    // Intercept `--remote` before clap so we can forward raw argv to the daemon,
+    // including the `ime` subcommand that is Windows-only in the local CLI.
+    let args: Vec<String> = std::env::args().collect();
+    if let Some((addr, cmd_args)) = cli::client::extract_remote(&args) {
+        std::process::exit(cli::client::forward(&addr, &cmd_args));
+    }
+
     let cli = Cli::parse();
 
     let result = match cli.command {
