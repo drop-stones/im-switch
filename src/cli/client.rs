@@ -148,8 +148,12 @@ mod tests {
         let addr = listener.local_addr().unwrap().to_string();
         let server = thread::spawn(move || {
             let (mut s, _) = listener.accept().unwrap();
-            let mut buf = [0u8; 64];
-            let _ = s.read(&mut buf);
+            // Drain the request to EOF (the client half-closes its write side
+            // after sending) before responding. Closing with unread data in the
+            // receive buffer makes the OS send RST instead of FIN, which races
+            // the client's response read ("connection reset by peer").
+            let mut req = Vec::new();
+            s.read_to_end(&mut req).unwrap();
             s.write_all(b"ok\nhello\n").unwrap();
         });
         let resp = send(&addr, "get").unwrap();
@@ -171,8 +175,12 @@ mod tests {
         let addr = listener.local_addr().unwrap().to_string();
         let server = thread::spawn(move || {
             let (mut s, _) = listener.accept().unwrap();
-            let mut buf = [0u8; 64];
-            let _ = s.read(&mut buf);
+            // Drain the request to EOF (the client half-closes its write side
+            // after sending) before responding. Closing with unread data in the
+            // receive buffer makes the OS send RST instead of FIN, which races
+            // the client's response read ("connection reset by peer").
+            let mut req = Vec::new();
+            s.read_to_end(&mut req).unwrap();
             s.write_all(b"ok\n").unwrap();
         });
         let code = forward(&addr, &["ime".to_string(), "off".to_string()]);
