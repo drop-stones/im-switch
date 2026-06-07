@@ -1,7 +1,7 @@
 # WSL2 IPC Design — speeding up IME switching under WSL2
 
-Status: **spec agreed** (implementation not started)
-Last updated: 2026-06-04
+Status: **implemented** (`im-switch` crate side; consumer auto-download pending)
+Last updated: 2026-06-07
 
 ## 1. Problem
 
@@ -86,11 +86,11 @@ We do **not** ship separate client/server executables. The existing single
 `im-switch` crate gains two run-modes, available on every platform:
 
 - **server mode** — `im-switch serve` (e.g. `im-switch.exe serve` on Windows)
-- **client mode** — the normal CLI, when `IM_SWITCH_REMOTE` is set, forwards the
-  command over TCP instead of acting locally.
+- **client mode** — `im-switch remote <command...>` forwards the command over TCP
+  instead of acting locally.
 
-So the Linux `im-switch` binary is dual-purpose: native fcitx5/ibus control when
-`IM_SWITCH_REMOTE` is unset, remote client when it is set (the plugin sets it
+So the Linux `im-switch` binary is dual-purpose: native fcitx5/ibus control via
+the normal subcommands, remote client via `remote` (the plugin uses `remote`
 only on WSL2). The release asset matrix is unchanged (linux / macos / windows ×
 arch). **WSL2 is the only case that uses two binaries together** (the existing
 Linux build as client + the existing Windows build as server/fallback).
@@ -100,15 +100,18 @@ Linux build as client + the existing Windows build as server/fallback).
 Robustly detecting mirror vs NAT from the Linux side is fragile, and naively
 "try then start daemon" would spawn orphan daemons on Windows under NAT.
 Enabling mirrored mode is already a deliberate user action, so requiring one
-extra plugin option (`wsl2_ipc`) is acceptable. The **connection attempt itself
-doubles as the mirror-reachability check**: under NAT, `127.0.0.1:PORT` never
-reaches the Windows daemon, so the client just fails and the plugin falls back.
+extra plugin option (`wsl2_server`) is acceptable. The **connection attempt
+itself doubles as the mirror-reachability check**: under NAT, `127.0.0.1:PORT`
+never reaches the Windows daemon, so the client just fails and the plugin falls
+back.
 
 ## 5. Components (in the `im-switch` crate)
 
 ### 5.1 Server mode — `im-switch serve [--port N] [--addr A]`
 
 - Binds `127.0.0.1:PORT` (default 7691, configurable).
+- **Loopback-only is enforced**: a non-loopback `--addr` (e.g. `0.0.0.0`) is
+  rejected, since the daemon has no authentication.
 - Cross-platform; dispatches to the existing `im_switch` library functions.
 - Single-threaded accept loop is sufficient (very low call volume).
 - Singleton by construction: a second instance fails to bind the fixed port and
@@ -130,15 +133,16 @@ Line protocol:
   it to probe reachability (mirrored-mode fast-path detection, see §5.2).
 - `shutdown` replies `ok` and then stops the accept loop.
 
-### 5.2 Client mode — triggered by the `--remote` flag
+### 5.2 Client mode — the `remote` subcommand
 
-- Triggered by `--remote` (optionally `--remote=ADDR`), intercepted in `main()`
-  **before** clap parsing so it forwards the remaining raw argv. This sidesteps
-  the fact that the `ime` subcommand is `cfg(windows)`-only — the Linux client
-  can still forward `ime off`. Because the flag is explicit, only flagged
-  invocations forward; `serve`/`--help` need no special-casing.
-- `--remote=ADDR` value: `host:port`, bare `port` (→ `127.0.0.1:port`), bare
-  `host` (→ `host:7691`); bare `--remote` (no value) → `127.0.0.1:7691`.
+- `im-switch remote [--addr ADDR] <command...>` forwards `<command...>` to the
+  daemon. The trailing args are captured verbatim (`trailing_var_arg`), so clap
+  never parses them locally — the Linux client can forward `ime off` even though
+  the `ime` subcommand is `cfg(windows)`-only. (An earlier design used a
+  `--remote` flag intercepted before clap; the subcommand is cleaner — it needs
+  no pre-clap hack and appears in `--help`.)
+- `--addr ADDR` value: `host:port`, bare `port` (→ `127.0.0.1:port`), bare
+  `host` (→ `host:7691`); omitted → `127.0.0.1:7691`.
 - **Connect timeout = 200 ms** (a short, fixed bound). Under mirrored mode a
   *dead* loopback port does **not** refuse instantly — the SYN is dropped — so
   without this bound a down daemon would hang for seconds. When the daemon is up,
@@ -151,29 +155,33 @@ Line protocol:
 - The client stays **thin**: on failure it just exits `2`. It does **not** start
   the daemon or fall back itself — that is the consumer's job (see §7).
 
-## 6. Binary layout (Plan B — server lives on the Windows filesystem)
+## 6. Binary layout (server lives in the WSL install dir)
 
-The server's executable **must reside on the Windows filesystem**, not inside the
-WSL VM. If the `.exe` lived under the WSL home (`~/.local/share`, i.e. the WSL
-9P share), a long-lived daemon would be coupled to the WSL VM lifecycle: a
-`wsl --shutdown`/restart could crash it or leave it stuck, and it could even
-block clean WSL shutdown. Putting it on `C:` decouples it entirely.
+Both binaries live **in the same WSL install dir**, side by side:
 
 | Role | Filesystem | Location |
 |------|-----------|----------|
 | Linux client | WSL FS | `~/.local/share/im-switch.zellij/im-switch` |
-| Windows server + fallback | Windows FS | `<windows-data-dir>/im-switch.zellij/im-switch.exe` |
+| Windows server + fallback | WSL FS | `~/.local/share/im-switch.zellij/im-switch.exe` |
 
-`<windows-data-dir>` resolution (use the **Windows-side** env, queried via
-interop — never the WSL/Linux `XDG_DATA_HOME`, which would point back into the WSL
-FS and re-introduce the coupling problem above):
+An earlier plan (Plan B) put the server on the Windows filesystem
+(`<windows-data-dir>/...`), out of concern that a daemon backed by the WSL 9P
+share would be coupled to the WSL VM lifecycle. Investigation showed that concern
+does **not** actually favor Windows-FS:
 
-1. Windows `%XDG_DATA_HOME%` if set, else
-2. `%LOCALAPPDATA%` (= `C:\Users\<user>\AppData\Local`).
+- The daemon is launched via interop and is a **child of `wsl.exe`**, so it is
+  tied to the WSL session and **dies cleanly on `wsl --shutdown` regardless of
+  where the `.exe` lives** — no orphan/zombie either way. (`setsid` only detaches
+  it from the launching shell, not from the WSL VM.)
+- Steady-state switch latency is **identical** (TCP to the resident daemon); the
+  exe location only affects the one-time, background **cold start** — measured
+  ~110 ms (WSL-FS) vs ~57 ms (Windows-FS), a +53 ms one-off that is invisible in
+  practice.
 
-This matches the location the plugin already uses for native-Windows installs.
-From WSL, resolve via `cmd.exe /c echo %LOCALAPPDATA%` (and `%XDG_DATA_HOME%`),
-then convert with `wslpath -u` to a `/mnt/c/...` path for placement.
+WSL-FS placement is chosen because it **eliminates the fragile Windows-data-dir
+resolution** (querying `%LOCALAPPDATA%` via `cmd.exe` + `wslpath`, which broke
+under zellij's minimal `PATH`) and keeps everything in one directory derived from
+`$HOME`.
 
 ## 7. Lifecycle & orchestration (consumer's responsibility)
 
@@ -183,14 +191,17 @@ plugin exit would break a second consumer running in parallel).
 
 Per IME switch, the consumer:
 
-1. Runs the Linux client (fast path) with the `--remote` flag.
-2. On exit code `2` (daemon down):
-   - run the Windows `im-switch.exe <args>` directly so this switch is not lost
-     (current behavior), and
-   - spawn `im-switch.exe serve` detached so the next call is fast.
+1. Runs the Linux client fast path: `im-switch remote ime <arg>`.
+2. On exit code `2` (daemon down), runs a **self-contained fallback command**
+   that invokes the Windows `im-switch.exe ime <arg>` directly (so the switch is
+   not lost) *and* restarts the daemon detached, in one shell command:
+   `setsid '<server>' serve >/dev/null 2>&1 </dev/null & exec '<server>' ime <arg>`.
+   The daemon is also pre-warmed once when the consumer becomes ready.
 
 Both binary paths are known to the consumer (it installed them), so all path /
-startup knowledge stays in the consumer; the `im-switch` crate stays simple.
+startup knowledge stays in the consumer; the `im-switch` crate stays simple. The
+consumer's retry is generic ("on transport failure, run the stashed fallback
+command once") and knows nothing about the daemon or `remote`.
 
 ## 8. Security
 
@@ -200,24 +211,25 @@ rule, no auth token needed.
 
 ## 9. Distribution
 
-- `im-switch`: add `serve` + client mode; cut a release; bump
+- `im-switch`: add `serve` + `remote`; cut a release (0.2.0); bump
   `REQUIRED_CLI_VERSION` in the consumers. Release assets unchanged.
-- Consumers: on WSL2, install **two** existing assets — the Linux build (client,
-  to WSL FS) and the Windows build (server/fallback, to the Windows data dir) —
-  and wire up the orchestration in §7.
+- Consumers: on WSL2, install **two** existing assets into the same WSL install
+  dir — the Linux build (client) and the Windows build (server/fallback) — and
+  wire up the orchestration in §7.
 
 ## 10. Staged implementation plan
 
 1. ✅ `im-switch`: `serve` subcommand (loopback daemon + line protocol + `shutdown`).
-2. ✅ `im-switch`: client mode (`--remote`) — forward / parse / exit codes.
-3. `im-switch.zellij`: install both binaries on WSL2 (client → WSL FS, server →
-   Windows data dir); add `wsl2_ipc` config; wire the §7 orchestration.
+2. ✅ `im-switch`: client mode (`remote` subcommand) — forward / parse / exit codes.
+3. 🔶 `im-switch.zellij`: `wsl2_server` config + §7 orchestration wired (done);
+   both binaries currently **pre-placed by hand** in the WSL install dir —
+   auto-download still pending.
 4. (later) `im-switch.nvim`: same orchestration.
 5. Validate: measure under mirrored mode; confirm no regression under NAT.
 
 ## 11. Open questions
 
-- Confirm default port (currently 7691).
+- Default port is **7691** (confirmed).
 - Protocol versioning: whether to add a `hello`/version line so a client can
   detect a **stale daemon after an upgrade** and have the consumer restart it
   (e.g. distinct exit code → `taskkill` + relaunch). Likely a v1.1 concern.
