@@ -89,9 +89,11 @@ fn emit(resp: &str) -> i32 {
 fn interpret(resp: &str) -> (i32, String, String) {
     match resp.split_once('\n') {
         Some(("ok", payload)) => (0, payload.to_string(), String::new()),
-        Some((first, _)) if first.starts_with("err: ") => {
-            (EXIT_OP_FAILED, String::new(), format!("Error: {}\n", &first[5..]))
-        }
+        Some((first, _)) if first.starts_with("err: ") => (
+            EXIT_OP_FAILED,
+            String::new(),
+            format!("Error: {}\n", &first[5..]),
+        ),
         _ => (EXIT_TRANSPORT, String::new(), String::new()),
     }
 }
@@ -113,7 +115,10 @@ mod tests {
 
     #[test]
     fn interpret_ok_with_payload() {
-        assert_eq!(interpret("ok\noff\n"), (0, "off\n".to_string(), String::new()));
+        assert_eq!(
+            interpret("ok\noff\n"),
+            (0, "off\n".to_string(), String::new())
+        );
     }
 
     #[test]
@@ -131,7 +136,10 @@ mod tests {
 
     #[test]
     fn interpret_malformed_is_transport() {
-        assert_eq!(interpret(""), (EXIT_TRANSPORT, String::new(), String::new()));
+        assert_eq!(
+            interpret(""),
+            (EXIT_TRANSPORT, String::new(), String::new())
+        );
     }
 
     #[test]
