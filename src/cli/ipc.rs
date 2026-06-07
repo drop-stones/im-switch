@@ -5,7 +5,7 @@
 //! See `docs/wsl2-ipc-design.md` for the full design.
 
 use std::io::{BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
 use im_switch::{get_input_method, list_input_methods, set_input_method, ImSwitchError};
@@ -13,8 +13,8 @@ use im_switch::{get_input_method, list_input_methods, set_input_method, ImSwitch
 /// Default TCP port for the IPC daemon.
 pub const DEFAULT_PORT: u16 = 7691;
 
-/// Maximum time to wait for a client to send its request line.
-const READ_TIMEOUT: Duration = Duration::from_secs(5);
+/// Maximum time to wait on a single client read or write.
+const IO_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Run the daemon, listening on `bind` (e.g. `"127.0.0.1:7691"`) until a
 /// `shutdown` request is received (or the process is killed).
@@ -22,6 +22,13 @@ const READ_TIMEOUT: Duration = Duration::from_secs(5);
 /// Binding a fixed port also enforces a single instance: a second `serve`
 /// fails to bind and exits.
 pub fn run_server(bind: &str) -> Result<(), ImSwitchError> {
+    // Loopback-only: the daemon has no authentication, so refuse to expose IME
+    // control (and `shutdown`) beyond the local host.
+    if bind.to_socket_addrs()?.any(|a| !a.ip().is_loopback()) {
+        return Err(ImSwitchError::Platform(format!(
+            "refusing to bind non-loopback address {bind}; the daemon is loopback-only"
+        )));
+    }
     let listener = TcpListener::bind(bind)?;
     eprintln!("im-switch: serving on {bind}");
     serve_loop(listener);
@@ -54,7 +61,8 @@ fn serve_loop(listener: TcpListener) {
 /// after the first newline are the verbatim stdout the CLI would have printed,
 /// so the daemon's output matches the CLI byte-for-byte.
 fn handle_conn(stream: TcpStream) -> std::io::Result<bool> {
-    stream.set_read_timeout(Some(READ_TIMEOUT))?;
+    stream.set_read_timeout(Some(IO_TIMEOUT))?;
+    stream.set_write_timeout(Some(IO_TIMEOUT))?;
 
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut line = String::new();
