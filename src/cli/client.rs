@@ -1,7 +1,8 @@
-//! Remote client mode: forward a command line over TCP to an `im-switch serve`
-//! daemon instead of running it locally. Triggered by the `--remote` flag, which
-//! is intercepted in `main()` *before* clap parsing — so it can forward even the
-//! `ime` subcommand, which is `cfg(windows)`-only in the local CLI.
+//! Remote client mode: forward a command over TCP to an `im-switch serve`
+//! daemon instead of running it locally. Invoked via the `remote` subcommand,
+//! whose trailing args are forwarded verbatim — so the client never has to know
+//! the command vocabulary (e.g. the `ime` action, which is Windows-only locally)
+//! and the daemon validates it.
 //!
 //! The client stays thin: on any failure it just returns a non-zero exit code.
 //! Starting the daemon and falling back to a direct `im-switch.exe` call is the
@@ -27,26 +28,6 @@ pub const EXIT_OP_FAILED: i32 = 1;
 /// Exit code: could not talk to the daemon (unreachable / malformed reply).
 pub const EXIT_TRANSPORT: i32 = 2;
 
-/// If `--remote` / `--remote=ADDR` appears in `args` (skipping argv[0]), return
-/// the resolved daemon address and the remaining args to forward. Otherwise
-/// `None`, meaning "run locally".
-pub fn extract_remote(args: &[String]) -> Option<(String, Vec<String>)> {
-    let mut found = false;
-    let mut addr: Option<String> = None;
-    let mut rest = Vec::new();
-    for arg in args.iter().skip(1) {
-        if arg == "--remote" {
-            found = true;
-        } else if let Some(value) = arg.strip_prefix("--remote=") {
-            found = true;
-            addr = Some(resolve_addr(value));
-        } else {
-            rest.push(arg.clone());
-        }
-    }
-    found.then(|| (addr.unwrap_or_else(default_addr), rest))
-}
-
 /// Forward `cmd_args` to the daemon at `addr`; return the process exit code.
 pub fn forward(addr: &str, cmd_args: &[String]) -> i32 {
     let request = cmd_args.join(" ");
@@ -59,13 +40,14 @@ pub fn forward(addr: &str, cmd_args: &[String]) -> i32 {
     }
 }
 
-fn default_addr() -> String {
+/// The default daemon address, `127.0.0.1:DEFAULT_PORT`.
+pub fn default_addr() -> String {
     format!("127.0.0.1:{DEFAULT_PORT}")
 }
 
-/// Resolve a `--remote=` value: empty → default, `host:port` as-is, bare digits
+/// Resolve a `--addr` value: empty → default, `host:port` as-is, bare digits
 /// → `127.0.0.1:port`, bare host → `host:DEFAULT_PORT`.
-fn resolve_addr(value: &str) -> String {
+pub fn resolve_addr(value: &str) -> String {
     if value.is_empty() {
         default_addr()
     } else if value.contains(':') {
@@ -121,32 +103,12 @@ mod tests {
     use std::thread;
 
     #[test]
-    fn no_flag_runs_local() {
-        let args = vec!["im-switch".into(), "ime".into(), "off".into()];
-        assert!(extract_remote(&args).is_none());
-    }
-
-    #[test]
-    fn bare_flag_uses_default_addr() {
-        let args = vec!["im-switch".into(), "--remote".into(), "ime".into(), "off".into()];
-        let (addr, rest) = extract_remote(&args).unwrap();
-        assert_eq!(addr, "127.0.0.1:7691");
-        assert_eq!(rest, vec!["ime".to_string(), "off".to_string()]);
-    }
-
-    #[test]
-    fn flag_with_bare_port() {
-        let args = vec!["im-switch".into(), "--remote=9000".into(), "get".into()];
-        let (addr, rest) = extract_remote(&args).unwrap();
-        assert_eq!(addr, "127.0.0.1:9000");
-        assert_eq!(rest, vec!["get".to_string()]);
-    }
-
-    #[test]
-    fn flag_with_host_port() {
-        let args = vec!["im-switch".into(), "--remote=192.168.0.5:7000".into(), "get".into()];
-        let (addr, _) = extract_remote(&args).unwrap();
-        assert_eq!(addr, "192.168.0.5:7000");
+    fn resolve_addr_variants() {
+        assert_eq!(resolve_addr(""), "127.0.0.1:7691");
+        assert_eq!(resolve_addr("9000"), "127.0.0.1:9000");
+        assert_eq!(resolve_addr("192.168.0.5:7000"), "192.168.0.5:7000");
+        assert_eq!(resolve_addr("myhost"), "myhost:7691");
+        assert_eq!(default_addr(), "127.0.0.1:7691");
     }
 
     #[test]
